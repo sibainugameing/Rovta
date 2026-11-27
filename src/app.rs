@@ -201,7 +201,7 @@ impl App {
         match self.song.tracks.get(self.sel) {
             None => { self.say("No track — press n to create one", true); return false; }
             Some(t) if !t.editable => {
-                self.say("Code-defined track: read-only in the TUI (edit it in CODE mode)", true);
+                self.say("Code-defined track: read-only. Press c to convert it to a TUI-managed track (or edit in CODE mode)", true);
                 return false;
             }
             _ => {}
@@ -278,9 +278,32 @@ impl App {
         self.say(&format!("Added '{name}' (written to main.ts)"), false);
     }
 
+    fn convert_track(&mut self) {
+        let Some(t) = self.track() else { return };
+        if t.editable { self.say("Already TUI-managed", false); return; }
+        let name = t.name.clone();
+        if self.armed != Some("convert") {
+            self.armed = Some("convert");
+            self.say(&format!("Convert '{name}'? Its code becomes literal notes (loops/functions are flattened; u undoes). Press c again"), true);
+            return;
+        }
+        self.armed = None;
+        let snap = self.snap();
+        let mut t = self.song.tracks[self.sel].clone();
+        match self.project.flatten_track(&t) {
+            Ok(()) => {
+                t.editable = true;
+                self.song.tracks[self.sel] = t;
+                self.push_undo(snap);
+                self.say(&format!("'{name}' is now TUI-managed"), false);
+            }
+            Err(e) => self.say(&format!("Cannot convert: {e}"), true),
+        }
+    }
+
     fn delete_track(&mut self) {
         let Some(t) = self.track() else { return };
-        if !t.editable { self.say("Code-defined track: remove it in CODE mode", true); return; }
+        if !t.editable { self.say("Code-defined track: press c to convert it first (or remove it in CODE mode)", true); return; }
         let name = t.name.clone();
         if self.armed != Some("delete") {
             self.armed = Some("delete");
@@ -419,7 +442,7 @@ impl App {
             if self.mode == Mode::Code { self.run_code(); }
             return;
         }
-        if self.mode == Mode::Code { self.on_key_code(k); } else { self.armed = armed; self.on_key_tui(k); }
+        if self.mode == Mode::Code { self.on_key_code(k); } else { self.armed = armed; self.on_key_tui(k); if self.armed == armed { self.armed = None; } }
     }
 
     fn leave_code(&mut self) {
@@ -435,6 +458,7 @@ impl App {
             KeyCode::Char('d') if ctrl => { self.delete_track(); return; }
             KeyCode::Char('r') if ctrl => { self.run_code(); return; }
             KeyCode::Char(' ') => { self.toggle_play(); return; }
+            KeyCode::Char('c') => { self.convert_track(); return; }
             KeyCode::Char('u') => { self.undo(); return; }
             KeyCode::Char('z') if ctrl => { self.undo(); return; }
             KeyCode::Char('U') => { self.redo(); return; }
@@ -470,7 +494,7 @@ impl App {
             KeyCode::Char('e') => { self.export_wav(); return; }
             KeyCode::Char('m') if self.view != View::Mixer => { self.export_midi(); return; }
             KeyCode::Char('i') => { self.prompt = Some(Prompt { label: "Import MIDI file".into(), buf: String::new(), kind: PromptKind::ImportMidi }); return; }
-            KeyCode::Char('?') => { self.say("Space play/stop · u undo · U redo · p play from cursor · 1/2/3 views · [ ] track · n/N new · Enter note · l/L len · v/V vel · g grid · < > BPM · e WAV · m MIDI · i import · Tab CODE", false); return; }
+            KeyCode::Char('?') => { self.say("Space play/stop · u undo · U redo · p play from cursor · 1/2/3 views · [ ] track · c convert code track · n/N new · Enter note · l/L len · v/V vel · g grid · < > BPM · e WAV · m MIDI · i import · Tab CODE", false); return; }
             _ => {}
         }
         match self.view {

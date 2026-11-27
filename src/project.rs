@@ -205,6 +205,56 @@ impl Project {
         }
     }
 
+
+    /// Replace the code that defines `t` with a canonical TUI-managed region (flattening loops/helpers
+    /// into literal notes). Works for non-canonical regions and for top-level `track("name", ...)...;` statements.
+    pub fn flatten_track(&mut self, t: &Track) -> Result<(), String> {
+        let id = format!("track:{}", t.name);
+        if self.locate(&id).is_some() { self.put_region(&id, gen_track(t)); return Ok(()); }
+        let pats = [format!("track({}", q(&t.name)), format!("track('{}'", t.name), format!("track(`{}`", t.name)];
+        for fi in 0..self.files.len() {
+            let lines = &self.files[fi].lines;
+            for (li, l) in lines.iter().enumerate() {
+                let Some(col) = pats.iter().filter_map(|p| l.find(p.as_str())).min() else { continue };
+                if !l[..col].trim().is_empty() {
+                    return Err("this track is assigned or nested in an expression; edit it in CODE mode".into());
+                }
+                // find the end of the statement
+                let (mut depth, mut end) = (0i32, None);
+                let mut quote: Option<char> = None;
+                'scan: for (lj, line) in lines.iter().enumerate().skip(li) {
+                    let chars: Vec<char> = line.chars().collect();
+                    let mut k = if lj == li { l[..col].chars().count() } else { 0 };
+                    while k < chars.len() {
+                        let c = chars[k];
+                        if let Some(qc) = quote {
+                            if c == '\\' { k += 1; } else if c == qc { quote = None; }
+                        } else if c == '"' || c == '\'' || c == '`' { quote = Some(c); }
+                        else if c == '/' && chars.get(k + 1) == Some(&'/') { break; }
+                        else if matches!(c, '(' | '[' | '{') { depth += 1; }
+                        else if matches!(c, ')' | ']' | '}') { depth -= 1; }
+                        else if c == ';' && depth == 0 {
+                            if chars[k + 1..].iter().any(|x| !x.is_whitespace()) { return Err("other code follows on the same line; edit it in CODE mode".into()); }
+                            end = Some(lj);
+                            break 'scan;
+                        }
+                        k += 1;
+                    }
+                    if depth == 0 && quote.is_none() && lj > li || (depth == 0 && lj == li && lines.get(lj + 1).map_or(true, |n| !n.trim_start().starts_with('.'))) {
+                        if lines.get(lj + 1).map_or(true, |n| !n.trim_start().starts_with('.')) { end = Some(lj); break; }
+                    }
+                }
+                let Some(end) = end else { return Err("could not find the end of the statement; edit it in CODE mode".into()) };
+                let f = &mut self.files[fi];
+                f.lines.splice(li..=end, gen_track(t));
+                f.dirty = true;
+                f.clamp();
+                return Ok(());
+            }
+        }
+        Err("track is created dynamically (e.g. in a loop); edit it in CODE mode".into())
+    }
+
     pub fn write_track(&mut self, t: &Track) { self.put_region(&format!("track:{}", t.name), gen_track(t)); }
     pub fn write_song(&mut self, s: &Song) { self.put_region("song", gen_song(s)); }
 
