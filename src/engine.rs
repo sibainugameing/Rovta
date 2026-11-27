@@ -95,7 +95,12 @@ struct Syn { wave: Wave, freq: f32, phase: f32, amp: f32, env: Env, gate: i64, d
 struct Smp { data: Arc<Sample>, pos: f64, rate: f64, amp: f32, env: Env, gate: i64, delay: usize }
 struct Drum { kind: u8, t: f32, phase: f32, amp: f32, rng: u32, prev: f32, delay: usize, len: f32 }
 
-enum Voice { Syn(Syn), Smp(Smp), Drum(Drum) }
+struct Ana {
+    freq: f32, p1: f32, p2: f32, ps: f32, d1: f32, d2: f32, amp: f32,
+    env: Env, fenv: Env, res: f32, amt: f32, sub: f32, ic1: f32, ic2: f32, gate: i64, delay: usize,
+}
+
+enum Voice { Syn(Syn), Ana(Ana), Smp(Smp), Drum(Drum) }
 
 fn noise(r: &mut u32) -> f32 {
     *r ^= *r << 13; *r ^= *r >> 17; *r ^= *r << 5;
@@ -106,16 +111,43 @@ impl Voice {
     fn alive(&self) -> bool {
         match self {
             Voice::Syn(v) => v.env.stage != Stage::Done,
+            Voice::Ana(v) => v.env.stage != Stage::Done,
             Voice::Smp(v) => v.env.stage != Stage::Done && (v.pos as usize) < v.data.data.len(),
             Voice::Drum(v) => v.t < v.len,
         }
     }
     fn release(&mut self) {
-        match self { Voice::Syn(v) => v.env.release(), Voice::Smp(v) => v.env.release(), Voice::Drum(_) => {} }
+        match self { Voice::Syn(v) => v.env.release(), Voice::Ana(v) => { v.env.release(); v.fenv.release(); } Voice::Smp(v) => v.env.release(), Voice::Drum(_) => {} }
     }
     #[inline]
-    fn tick(&mut self, sr: f32) -> f32 {
+    fn tick(&mut self, sr: f32, cut: f32) -> f32 {
         match self {
+            Voice::Ana(v) => {
+                if v.delay > 0 { v.delay -= 1; return 0.0; }
+                v.gate -= 1;
+                if v.gate == 0 { v.env.release(); v.fenv.release(); }
+                let (dt1, dt2) = (v.freq * v.d1 / sr, v.freq * v.d2 / sr);
+                let s1 = 2.0 * v.p1 - 1.0 - blep(v.p1, dt1);
+                let s2 = 2.0 * v.p2 - 1.0 - blep(v.p2, dt2);
+                let sub = (v.ps * TAU).sin();
+                v.p1 += dt1; if v.p1 >= 1.0 { v.p1 -= 1.0; }
+                v.p2 += dt2; if v.p2 >= 1.0 { v.p2 -= 1.0; }
+                v.ps += v.freq * 0.5 / sr; if v.ps >= 1.0 { v.ps -= 1.0; }
+                let osc = (s1 + s2) * 0.5 + sub * v.sub;
+                // resonant state-variable low-pass, cutoff swept by the filter envelope (up to 5 octaves)
+                let fe = v.fenv.tick();
+                let fc = (cut * 2f32.powf(v.amt * 5.0 * fe)).clamp(30.0, sr * 0.45);
+                let g = (PI * fc / sr).tan();
+                let k = 2.0 - 1.9 * v.res.clamp(0.0, 1.0);
+                let a1 = 1.0 / (1.0 + g * (g + k));
+                let (a2, a3) = (g * a1, g * g * a1);
+                let v3 = osc - v.ic2;
+                let v1 = a1 * v.ic1 + a2 * v3;
+                let v2 = v.ic2 + a2 * v.ic1 + a3 * v3;
+                v.ic1 = 2.0 * v1 - v.ic1;
+                v.ic2 = 2.0 * v2 - v.ic2;
+                v2 * v.amp * v.env.tick() / (1.0 + v.res * 0.8)
+            }
             Voice::Syn(v) => {
                 if v.delay > 0 { v.delay -= 1; return 0.0; }
                 v.gate -= 1;
@@ -343,6 +375,12 @@ impl Renderer {
                     amp: amp * 0.7, env: Env::new(t.adsr, sr), gate, delay: offset }),
                 None => return,
             },
+            "analog" => Voice::Ana(Ana {
+                freq: 440.0 * 2f32.powf((n.pitch as f32 - 69.0) / 12.0), p1: 0.0, p2: 0.37, ps: 0.0,
+                d1: 2f32.powf(t.detune as f32 / 2400.0), d2: 2f32.powf(-t.detune as f32 / 2400.0), amp: amp * 0.38,
+                env: Env::new(t.adsr, sr), fenv: Env::new(t.adsr, sr), res: t.res as f32, amt: t.fenv as f32, sub: t.sub as f32,
+                ic1: 0.0, ic2: 0.0, gate, delay: offset,
+            }),
             w => Voice::Syn(Syn {
                 wave: match w { "sine" => Wave::Sine, "square" => Wave::Square, "tri" => Wave::Tri, _ => Wave::Saw },
                 freq: 440.0 * 2f32.powf((n.pitch as f32 - 69.0) / 12.0), phase: 0.0, amp: amp * 0.22,
@@ -397,7 +435,7 @@ impl Renderer {
             let dsamp = ((t.delay_time * spb) as usize).clamp(1, dlen - 1);
             let theta = (pan + 1.0) * PI / 4.0;
             let (gl, gr) = (theta.cos() * vol, theta.sin() * vol);
-            let filt = cutoff < 19000.0;
+            let filt = cutoff < 19000.0 && t.inst != "analog"; // analog voices have their own filter
             let g = (PI * cutoff.min(sr * 0.45) / sr).tan();
             let k = 1.0f32;
             let a1 = 1.0 / (1.0 + g * (g + k));
@@ -405,7 +443,7 @@ impl Renderer {
             let gain = 1.0 + drive * 8.0;
             for i in 0..n {
                 let mut x = 0.0;
-                for v in st.voices.iter_mut() { x += v.tick(sr); }
+                for v in st.voices.iter_mut() { x += v.tick(sr, cutoff); }
                 if filt {
                     let v3 = x - st.ic2;
                     let v1 = a1 * st.ic1 + a2 * v3;

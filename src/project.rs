@@ -64,6 +64,10 @@ pub fn gen_track(t: &Track) -> Vec<String> {
     if t.solo { o.push("solo: true".into()); }
     if t.adsr != d.adsr { o.push(format!("adsr: [{}]", t.adsr.iter().map(|x| fnum(*x)).collect::<Vec<_>>().join(", "))); }
     if t.cutoff != d.cutoff { o.push(format!("cutoff: {}", fnum(t.cutoff))); }
+    if t.res != d.res { o.push(format!("res: {}", fnum(t.res))); }
+    if t.fenv != d.fenv { o.push(format!("fenv: {}", fnum(t.fenv))); }
+    if t.detune != d.detune { o.push(format!("detune: {}", fnum(t.detune))); }
+    if t.sub != d.sub { o.push(format!("sub: {}", fnum(t.sub))); }
     if t.drive != d.drive { o.push(format!("drive: {}", fnum(t.drive))); }
     if t.delay != d.delay { o.push(format!("delay: {}", fnum(t.delay))); }
     if t.delay_time != d.delay_time { o.push(format!("delayTime: {}", fnum(t.delay_time))); }
@@ -347,12 +351,12 @@ export function hats(bars: number, swing = 0): Hit[] {
 
 pub const DTS: &str = r#"// Type declarations for the Rovta scripting API (for tsc / editor support).
 type Pitch = number | string; // MIDI number or note name such as "C#4"
-type Inst = "sine" | "saw" | "square" | "tri" | "drums" | "sampler";
+type Inst = "analog" | "sine" | "saw" | "square" | "tri" | "drums" | "sampler";
 interface TrackOptions {
   inst?: Inst; sample?: string; root?: number;
   vol?: number; pan?: number; mute?: boolean; solo?: boolean;
   adsr?: [number, number, number, number];
-  cutoff?: number; drive?: number; delay?: number; delayTime?: number; delayFb?: number; reverb?: number;
+  cutoff?: number; res?: number; fenv?: number; detune?: number; sub?: number; drive?: number; delay?: number; delayTime?: number; delayFb?: number; reverb?: number;
 }
 type AutoParam = "vol" | "pan" | "cutoff" | "drive" | "delay" | "reverb";
 declare class Track {

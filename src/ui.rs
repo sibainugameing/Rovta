@@ -52,7 +52,7 @@ fn picker(f: &mut Frame, sel: usize) {
         ]));
     }
     lines.push(Line::raw(""));
-    lines.push(Line::styled(" ↑↓ / 1-6 choose   Enter add   Esc cancel", st(DIM)));
+    lines.push(Line::styled(" ↑↓ / 1-7 choose   Enter add   Esc cancel", st(DIM)));
     f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::ALL).border_style(st(Color::Cyan)).title(" New track — choose a type ")), r);
 }
 
@@ -243,7 +243,7 @@ fn steps(f: &mut Frame, app: &mut App, a: Rect) {
 fn mixer(f: &mut Frame, app: &App, a: Rect) {
     let cw = 14usize;
     let mut lines = vec![Line::raw("")];
-    let mut head = vec![Span::raw("  Param    ")];
+    let mut head = vec![Span::raw("  Param       ")];
     for (i, t) in app.song.tracks.iter().enumerate() {
         let nm: String = t.name.chars().take(cw - 3).collect();
         let flags = format!("{}{}{}", if t.mute { "M" } else { "" }, if t.solo { "S" } else { "" }, if t.editable { "" } else { "*" });
@@ -252,7 +252,7 @@ fn mixer(f: &mut Frame, app: &App, a: Rect) {
     lines.push(Line::from(head));
     let bar = |v: f64, lo: f64, hi: f64| { let n = (((v - lo) / (hi - lo)).clamp(0.0, 1.0) * 6.0).round() as usize; format!("{}{}", "▮".repeat(n), "▯".repeat(6 - n)) };
     for (pi, name) in MIX_PARAMS.iter().enumerate() {
-        let mut sp = vec![Span::styled(format!("  {:<8} ", name), if pi == app.mix_param { st(Color::Yellow) } else { st(Color::Gray) })];
+        let mut sp = vec![Span::styled(format!("  {:<11} ", name), if pi == app.mix_param { st(Color::Yellow) } else { st(Color::Gray) })];
         for (ti, t) in app.song.tracks.iter().enumerate() {
             let txt = match pi {
                 0 => format!("{} {:.2}", bar(t.vol, 0.0, 1.5), t.vol),
@@ -263,7 +263,11 @@ fn mixer(f: &mut Frame, app: &App, a: Rect) {
                 5 => format!("{} {:.2}", bar(t.delay, 0.0, 1.0), t.delay),
                 6 => format!("{} {:.2}", bar(t.reverb, 0.0, 1.0), t.reverb),
                 7 => format!("{} {:.3}", bar(t.adsr[0], 0.0, 1.0), t.adsr[0]),
-                _ => format!("{} {:.2}", bar(t.adsr[3], 0.0, 2.0), t.adsr[3]),
+                8 => format!("{} {:.2}", bar(t.adsr[3], 0.0, 2.0), t.adsr[3]),
+                9 => format!("{} {:.2}", bar(t.res, 0.0, 1.0), t.res),
+                10 => format!("{} {:.2}", bar(t.fenv, 0.0, 1.0), t.fenv),
+                11 => format!("{} {:.0}c", bar(t.detune, 0.0, 50.0), t.detune),
+                _ => format!("{} {:.2}", bar(t.sub, 0.0, 1.0), t.sub),
             };
             let sel = ti == app.sel && pi == app.mix_param;
             let style = if sel { Style::default().fg(Color::Black).bg(Color::Cyan) } else if t.editable { st(Color::Green) } else { st(DIM) };

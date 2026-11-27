@@ -8,10 +8,14 @@ fn d_dt() -> f64 { 0.75 }
 fn d_fb() -> f64 { 0.4 }
 fn d_root() -> u8 { 60 }
 fn d_inst() -> String { "saw".into() }
+fn d_res() -> f64 { 0.25 }
+fn d_fenv() -> f64 { 0.5 }
+fn d_detune() -> f64 { 10.0 }
+fn d_sub() -> f64 { 0.3 }
 fn d_bpm() -> f64 { 120.0 }
 fn d_sig() -> [u32; 2] { [4, 4] }
 
-pub const INSTS: [&str; 5] = ["sine", "saw", "square", "tri", "drums"];
+pub const INSTS: [&str; 6] = ["analog", "sine", "saw", "square", "tri", "drums"];
 pub const DRUM_LANES: [(u8, &str); 6] =
     [(36, "Kick"), (38, "Snare"), (42, "C.Hat"), (46, "O.Hat"), (39, "Clap"), (45, "Tom")];
 
@@ -51,6 +55,15 @@ pub struct Track {
     pub adsr: [f64; 4],
     #[serde(default = "d_cut")]
     pub cutoff: f64,
+    /// analog synth: filter resonance 0..1, filter-envelope amount 0..1, oscillator detune (cents), sub level 0..1
+    #[serde(default = "d_res")]
+    pub res: f64,
+    #[serde(default = "d_fenv")]
+    pub fenv: f64,
+    #[serde(default = "d_detune")]
+    pub detune: f64,
+    #[serde(default = "d_sub")]
+    pub sub: f64,
     #[serde(default)]
     pub drive: f64,
     #[serde(default)]

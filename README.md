@@ -31,7 +31,7 @@ cargo build --release
 **共通**: `Ctrl+S` 保存（CODEでは保存＋実行） / `Ctrl+Q` 終了 / `Tab`(TUI→CODE) / `Esc`(CODE→TUI)。**ファンクションキーは一切使いません**
 
 **TUI**: `Space` 再生/停止 · `p` カーソル位置から再生 · `Home` 巻き戻し · `1` ピアノロール `2` ステップ `3` ミキサー ·
-`[` `]` トラック選択 · `n` トラック追加（種類を選択: Saw/Square/Sine/Triangle/ドラム/サンプラー） · `Ctrl+D`×2 削除 · `<` `>` BPM · `T` 拍子 ·
+`[` `]` トラック選択 · `n` トラック追加（種類を選択: アナログシンセ/Saw/Square/Sine/Triangle/ドラム/サンプラー） · `Ctrl+D`×2 削除 · `<` `>` BPM · `T` 拍子 ·
 `e` WAV書き出し · `m` MIDI書き出し · `i` MIDI取り込み（`out/` に出力）
 
 - 元に戻す: `u` / `Ctrl+Z`、やり直し: `U` / `Ctrl+Y`（ノート・ミキサー・トラック追加削除・BPM・MIDI取り込みが対象。コードを編集すると履歴はリセット）
@@ -74,6 +74,9 @@ track("lead", { inst: "saw", vol: 0.7, cutoff: 2400, delay: 0.3, reverb: 0.2 })
   .auto("cutoff", [[0, 400], [8, 6000]]);              // オートメーション（beat, 値）
 n("C#4"); scale("A3", "minor", 2); chord("A3", "min7");
 ```
+アナログシンセ: `track("pad", { inst: "analog", cutoff: 900, res: 0.4, fenv: 0.6, detune: 12, sub: 0.3, adsr: [0.01, 0.3, 0.45, 0.25] })`
+（デチューンした2基のノコギリ波＋サブオシレータ → レゾナンス付きローパス。`cutoff` が基準値で、`fenv` で音ごとにフィルタが開閉します。ミキサーの Resonance / Filter Env / Detune / Sub Osc で調整）
+
 サンプラー: `track("kick", { inst: "sampler", sample: "samples/kick.wav", root: 60 })`
 
 ## 既知の制限（正直なところ）

@@ -27,7 +27,7 @@
   g.bpm = (v) => { song.bpm = Number(v); };
   g.timeSig = (num, den) => { song.timeSig = [num, den]; };
 
-  const INSTS = ["sine", "saw", "square", "tri", "drums", "sampler"];
+  const INSTS = ["analog", "sine", "saw", "square", "tri", "drums", "sampler"];
   const PARAMS = ["vol", "volume", "pan", "cutoff", "drive", "delay", "reverb"];
   class Track {
     constructor(data) { this.data = data; }

@@ -16,7 +16,8 @@ pub struct Prompt { pub label: String, pub buf: String, pub kind: PromptKind }
 pub struct Snap { pub song: Song, pub files: Vec<(String, Vec<String>)> }
 pub struct Completion { pub items: Vec<(String, String)>, pub sel: usize, pub plen: usize }
 
-pub const TRACK_KINDS: [(&str, &str, &str); 6] = [
+pub const TRACK_KINDS: [(&str, &str, &str); 7] = [
+    ("Analog Synth", "analog", "2 detuned saws + sub, resonant filter w/ envelope"),
     ("Synth · Saw", "saw", "bright, buzzy — leads, basses, pads"),
     ("Synth · Square", "square", "hollow, retro — chiptune, plucks"),
     ("Synth · Sine", "sine", "pure — sub bass, soft tones"),
@@ -24,7 +25,7 @@ pub const TRACK_KINDS: [(&str, &str, &str); 6] = [
     ("Drums", "drums", "built-in kit: kick, snare, hats, clap, toms"),
     ("Sampler (WAV)", "sampler", "play a .wav file across the keyboard"),
 ];
-pub const MIX_PARAMS: [&str; 9] = ["Volume", "Pan", "Wave", "Cutoff", "Drive", "Delay", "Reverb", "Attack", "Release"];
+pub const MIX_PARAMS: [&str; 13] = ["Volume", "Pan", "Wave", "Cutoff", "Drive", "Delay", "Reverb", "Attack", "Release", "Resonance", "Filter Env", "Detune", "Sub Osc"];
 const GRIDS: [f64; 4] = [1.0, 0.5, 0.25, 0.125];
 
 const GLOBAL_API: [(&str, &str); 16] = [
@@ -282,6 +283,7 @@ impl App {
         };
         let snap = self.snap();
         let mut t = Track::new(&name, inst);
+        if inst == "analog" { t.cutoff = 900.0; t.adsr = [0.01, 0.3, 0.45, 0.25]; t.vol = 0.7; }
         t.sample = sample;
         t.editable = true;
         self.project.write_track(&t);
@@ -378,7 +380,11 @@ impl App {
             5 => t.delay = r4((t.delay + dir * st(0.02, 0.1)).clamp(0.0, 1.0)),
             6 => t.reverb = r4((t.reverb + dir * st(0.02, 0.1)).clamp(0.0, 1.0)),
             7 => t.adsr[0] = r4((t.adsr[0] + dir * st(0.005, 0.05)).clamp(0.001, 2.0)),
-            _ => t.adsr[3] = r4((t.adsr[3] + dir * st(0.02, 0.2)).clamp(0.002, 4.0)),
+            8 => t.adsr[3] = r4((t.adsr[3] + dir * st(0.02, 0.2)).clamp(0.002, 4.0)),
+            9 => t.res = r4((t.res + dir * st(0.02, 0.1)).clamp(0.0, 1.0)),
+            10 => t.fenv = r4((t.fenv + dir * st(0.02, 0.1)).clamp(0.0, 1.0)),
+            11 => t.detune = r4((t.detune + dir * st(1.0, 5.0)).clamp(0.0, 50.0)),
+            _ => t.sub = r4((t.sub + dir * st(0.02, 0.1)).clamp(0.0, 1.0)),
         });
     }
 
