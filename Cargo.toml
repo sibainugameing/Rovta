@@ -1,0 +1,21 @@
+[package]
+name = "rovta"
+version = "0.1.0"
+edition = "2021"
+description = "Code-driven music production environment for the terminal"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+cpal = "0.15"
+rquickjs = { version = "0.9", features = ["loader", "bindgen"] }
+midly = "0.5"
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.1"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
