@@ -11,11 +11,19 @@ use std::path::{Path, PathBuf};
 pub enum Mode { Tui, Code }
 #[derive(Clone, Copy, PartialEq)]
 pub enum View { Roll, Steps, Mixer }
-pub enum PromptKind { ImportMidi, OpenFile }
+pub enum PromptKind { ImportMidi, OpenFile, NewSampler }
 pub struct Prompt { pub label: String, pub buf: String, pub kind: PromptKind }
 pub struct Snap { pub song: Song, pub files: Vec<(String, Vec<String>)> }
 pub struct Completion { pub items: Vec<(String, String)>, pub sel: usize, pub plen: usize }
 
+pub const TRACK_KINDS: [(&str, &str, &str); 6] = [
+    ("Synth · Saw", "saw", "bright, buzzy — leads, basses, pads"),
+    ("Synth · Square", "square", "hollow, retro — chiptune, plucks"),
+    ("Synth · Sine", "sine", "pure — sub bass, soft tones"),
+    ("Synth · Triangle", "tri", "mellow — flutes, soft leads"),
+    ("Drums", "drums", "built-in kit: kick, snare, hats, clap, toms"),
+    ("Sampler (WAV)", "sampler", "play a .wav file across the keyboard"),
+];
 pub const MIX_PARAMS: [&str; 9] = ["Volume", "Pan", "Wave", "Cutoff", "Drive", "Delay", "Reverb", "Attack", "Release"];
 const GRIDS: [f64; 4] = [1.0, 0.5, 0.25, 0.125];
 
@@ -71,6 +79,7 @@ pub struct App {
     pub roll_rows: usize,
     pub ed_w: usize,
     pub ed_h: usize,
+    pub picker: Option<usize>,
     pub undo: Vec<Snap>,
     pub redo: Vec<Snap>,
 }
@@ -90,7 +99,7 @@ impl App {
             project, song: Song::default(), mode: Mode::Tui, view: View::Roll, sel: 0, cur_step: 0.0, cur_pitch: 60, grid: 0.25, last_dur: 0.25,
             scroll_x: 0.0, base_pitch: 48, step_base: 60, mix_param: 0, cfile: 0, status: String::new(), status_err: false, error: None, logs: vec![],
             engine, audio_msg, bank: Bank::new(), prompt: None, comp: None, code_changed: false, armed: None, quit: false, meter: (0.0, 0.0),
-            roll_cols: 64, roll_rows: 24, ed_w: 80, ed_h: 20, undo: vec![], redo: vec![],
+            roll_cols: 64, roll_rows: 24, ed_w: 80, ed_h: 20, picker: None, undo: vec![], redo: vec![],
         };
         app.run_code();
         let m = app.audio_msg.clone();
@@ -199,7 +208,7 @@ impl App {
 
     fn edit_track<F: FnOnce(&mut Track)>(&mut self, f: F) -> bool {
         match self.song.tracks.get(self.sel) {
-            None => { self.say("No track — press n to create one", true); return false; }
+            None => { self.say("No track — press n to add one", true); return false; }
             Some(t) if !t.editable => {
                 self.say("Code-defined track: read-only. Press c to convert it to a TUI-managed track (or edit in CODE mode)", true);
                 return false;
@@ -260,22 +269,41 @@ impl App {
         if let Some(d) = nd { self.last_dur = d; }
     }
 
-    fn new_track(&mut self, drums: bool) {
-        let mut i = self.song.tracks.len() + 1;
+    fn new_track(&mut self, inst: &str, sample: Option<String>) {
+        let base = match &sample {
+            Some(p) => Path::new(p).file_stem().map_or("sample".to_string(), |x| x.to_string_lossy().to_string()),
+            None => inst.to_string(),
+        };
+        let mut i = 1;
         let name = loop {
-            let n = format!("{} {}", if drums { "drums" } else { "track" }, i);
+            let n = format!("{base} {i}");
             if !self.song.tracks.iter().any(|t| t.name == n) { break n; }
             i += 1;
         };
         let snap = self.snap();
-        let mut t = Track::new(&name, if drums { "drums" } else { "saw" });
+        let mut t = Track::new(&name, inst);
+        t.sample = sample;
         t.editable = true;
         self.project.write_track(&t);
         self.push_undo(snap);
         self.song.tracks.push(t);
         self.sel = self.song.tracks.len() - 1;
+        let mut errs = vec![];
+        self.bank = engine::load_bank(&self.song, &self.project.dir, &mut errs);
         self.sync_engine();
-        self.say(&format!("Added '{name}' (written to main.ts)"), false);
+        match errs.first() {
+            Some(e) => self.say(&format!("Added '{name}' — warning: {e}"), true),
+            None => self.say(&format!("Added '{name}' (written to main.ts)"), false),
+        }
+    }
+
+    fn pick_kind(&mut self, idx: usize) {
+        let (_, inst, _) = TRACK_KINDS[idx];
+        if inst == "sampler" {
+            self.prompt = Some(Prompt { label: "Sample file (.wav, relative to project)".into(), buf: "samples/".into(), kind: PromptKind::NewSampler });
+        } else {
+            self.new_track(inst, None);
+        }
     }
 
     fn convert_track(&mut self) {
@@ -418,6 +446,11 @@ impl App {
                 KeyCode::Enter => {
                     match p.kind {
                         PromptKind::ImportMidi => self.import_midi(&p.buf),
+                        PromptKind::NewSampler => {
+                            let path = p.buf.trim().to_string();
+                            if self.project.dir.join(&path).is_file() { self.new_track("sampler", Some(path)); }
+                            else { self.say(&format!("File not found: {path}"), true); }
+                        }
                         PromptKind::OpenFile => match self.project.create_file(&p.buf) {
                             Ok(i) => { self.cfile = i; self.say(&format!("Opened {}", self.project.files[i].path), false); }
                             Err(e) => self.say(&e, true),
@@ -427,6 +460,21 @@ impl App {
                 KeyCode::Backspace => { p.buf.pop(); self.prompt = Some(p); }
                 KeyCode::Char(c) if !ctrl => { p.buf.push(c); self.prompt = Some(p); }
                 _ => self.prompt = Some(p),
+            }
+            return;
+        }
+        if let Some(sel) = self.picker {
+            let n = TRACK_KINDS.len();
+            match k.code {
+                KeyCode::Esc => self.picker = None,
+                KeyCode::Up => self.picker = Some((sel + n - 1) % n),
+                KeyCode::Down => self.picker = Some((sel + 1) % n),
+                KeyCode::Enter => { self.picker = None; self.pick_kind(sel); }
+                KeyCode::Char(c) if c.is_ascii_digit() && (1..=n as u32).contains(&c.to_digit(10).unwrap()) => {
+                    self.picker = None;
+                    self.pick_kind(c.to_digit(10).unwrap() as usize - 1);
+                }
+                _ => {}
             }
             return;
         }
@@ -479,8 +527,7 @@ impl App {
             KeyCode::Char('3') => { self.view = View::Mixer; return; }
             KeyCode::Char('[') => { self.sel = self.sel.saturating_sub(1); return; }
             KeyCode::Char(']') => { if self.sel + 1 < self.song.tracks.len() { self.sel += 1; } return; }
-            KeyCode::Char('n') => { self.new_track(false); return; }
-            KeyCode::Char('N') => { self.new_track(true); return; }
+            KeyCode::Char('n') => { self.picker = Some(0); return; }
             KeyCode::Char('<') => { let b = self.song.bpm - 1.0; self.edit_song(|s| s.bpm = b.max(20.0)); return; }
             KeyCode::Char('>') => { let b = self.song.bpm + 1.0; self.edit_song(|s| s.bpm = b.min(400.0)); return; }
             KeyCode::Char('T') => {
@@ -494,7 +541,7 @@ impl App {
             KeyCode::Char('e') => { self.export_wav(); return; }
             KeyCode::Char('m') if self.view != View::Mixer => { self.export_midi(); return; }
             KeyCode::Char('i') => { self.prompt = Some(Prompt { label: "Import MIDI file".into(), buf: String::new(), kind: PromptKind::ImportMidi }); return; }
-            KeyCode::Char('?') => { self.say("Space play/stop · u undo · U redo · p play from cursor · 1/2/3 views · [ ] track · c convert code track · n/N new · Enter note · l/L len · v/V vel · g grid · < > BPM · e WAV · m MIDI · i import · Tab CODE", false); return; }
+            KeyCode::Char('?') => { self.say("Space play/stop · u undo · U redo · p play from cursor · 1/2/3 views · [ ] track · c convert code track · n new track · Enter note · l/L len · v/V vel · g grid · < > BPM · e WAV · m MIDI · i import · Tab CODE", false); return; }
             _ => {}
         }
         match self.view {

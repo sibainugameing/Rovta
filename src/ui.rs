@@ -33,6 +33,27 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Mode::Code => code(f, app, rows[2]),
     }
     footer(f, app, rows[3]);
+    if let Some(sel) = app.picker { picker(f, sel); }
+}
+
+fn picker(f: &mut Frame, sel: usize) {
+    let area = f.size();
+    let w = 62u16.min(area.width);
+    let h = (TRACK_KINDS.len() as u16 + 4).min(area.height);
+    let r = Rect::new(area.x + (area.width - w) / 2, area.y + (area.height.saturating_sub(h)) / 2, w, h);
+    f.render_widget(Clear, r);
+    let mut lines = vec![];
+    for (i, (name, _, desc)) in TRACK_KINDS.iter().enumerate() {
+        let on = i == sel;
+        let base = if on { Style::default().fg(Color::Black).bg(Color::Cyan) } else { Style::default() };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} {:<18}", i + 1, name), base.add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{desc:<w$}", w = (w as usize).saturating_sub(23)), if on { base } else { st(DIM) }),
+        ]));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(" ↑↓ / 1-6 choose   Enter add   Esc cancel", st(DIM)));
+    f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::ALL).border_style(st(Color::Cyan)).title(" New track — choose a type ")), r);
 }
 
 fn header(f: &mut Frame, app: &App, a: Rect) {
@@ -106,7 +127,7 @@ fn track_list(f: &mut Frame, app: &App, a: Rect) {
             Span::styled(format!(" {:<3}", flags), st(Color::Magenta)),
         ]));
     }
-    if lines.is_empty() { lines.push(Line::styled(" (no tracks) n: new", st(DIM))); }
+    if lines.is_empty() { lines.push(Line::styled(" (no tracks) n: add", st(DIM))); }
     lines.push(Line::raw(""));
     lines.push(Line::styled(" * = code-owned", st(DIM)));
     f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::RIGHT).border_style(st(DIM)).title(" Tracks ")), a);
